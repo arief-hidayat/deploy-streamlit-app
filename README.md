@@ -26,15 +26,27 @@ In the main folder, you will find a cdk template to deploy the app on ECS / ALB.
 
 Prerequisites:
 
-* python3.8
+* python3.11
 * docker
 * use a Chrome browser for development
-* `anthropic.claude-v2` model activated in Amazon Bedrock in your AWS account
-* the environment used to create this demo was an AWS Cloud9 m5.large instance with Amazon Linux 2023, but it should also work with other configurations
+* Agents for Amazon Bedrock you deployed from this [HR assistant example](https://github.com/aws-samples/amazon-bedrock-samples/tree/main/agents-for-bedrock/use-case-examples/hr-assistant). Take note of the agent id and agent alias id and s3 bucket name
+```text
+        # vpc = ec2.Vpc(self, f"{prefix}AppVpc", ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
+        #     max_azs=2, vpc_name=f"{prefix}-stl-vpc", nat_gateways=1)
+        vpc = ec2.Vpc.from_lookup(self, f"{prefix}AppVpc", vpc_id=Config.VPC_ID)
+```
 
 To deploy:
 
-1. Edit `docker_app/config_file.py`, choose a `STACK_NAME` and a `CUSTOM_HEADER_VALUE`.
+1. Edit `docker_app/config_file.py`, 
+     * choose a `STACK_NAME` and a `CUSTOM_HEADER_VALUE`.
+     * replace value of `VPC_ID = "vpc-id-here"` with your existing VPC.
+     * replace value of the following
+```text
+    BEDROCK_AGENT_ALIAS_ID = "BEDROCK_AGENT_ALIAS_ID_HERE"
+    BEDROCK_AGENT_ID = "BEDROCK_AGENT_ID_HERE"
+    S3_BUCKET_HR_ASSISTANCE_GENERATED_IMAGES = "S3_BUCKET_HR_ASSISTANCE_GENERATED_IMAGES_HERE"
+```
 
 2. Install dependencies
  

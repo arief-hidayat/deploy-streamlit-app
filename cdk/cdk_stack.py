@@ -1,5 +1,4 @@
 from aws_cdk import (
-    # Duration,
     Stack,
     aws_ec2 as ec2,
     aws_ecs as ecs,
@@ -12,6 +11,7 @@ from aws_cdk import (
     SecretValue,
     CfnOutput,
 )
+from aws_cdk.aws_cognito import IUserPool
 from constructs import Construct
 from docker_app.config_file import Config
 
@@ -30,9 +30,7 @@ class CdkStack(Stack):
 
         # Create Cognito client
         user_pool_client = cognito.UserPoolClient(self, f"{prefix}UserPoolClient",
-                                                  user_pool=user_pool,
-                                                  generate_secret=True
-                                                  )
+                                                  user_pool=user_pool, generate_secret=True)
 
         # Store Cognito parameters in a Secrets Manager secret
         secret = secretsmanager.Secret(self, f"{prefix}ParamCognitoSecret",
@@ -49,14 +47,9 @@ class CdkStack(Stack):
 
 
         # VPC for ALB and ECS cluster
-        vpc = ec2.Vpc(
-            self,
-            f"{prefix}AppVpc",
-            ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
-            max_azs=2,
-            vpc_name=f"{prefix}-stl-vpc",
-            nat_gateways=1,
-        )
+        # vpc = ec2.Vpc(self, f"{prefix}AppVpc", ip_addresses=ec2.IpAddresses.cidr("10.0.0.0/16"),
+        #     max_azs=2, vpc_name=f"{prefix}-stl-vpc", nat_gateways=1)
+        vpc = ec2.Vpc.from_lookup(self, f"{prefix}AppVpc", vpc_id=Config.VPC_ID)
 
         ecs_security_group = ec2.SecurityGroup(
             self,
@@ -108,8 +101,11 @@ class CdkStack(Stack):
 
         fargate_task_definition.add_container(
             f"{prefix}WebContainer",
-            # Use an image from DockerHub
             image=image,
+            environment={
+                "BEDROCK_AGENT_ID": Config.BEDROCK_AGENT_ID,
+                "BEDROCK_AGENT_ALIAS_ID": Config.BEDROCK_AGENT_ALIAS_ID,
+            },
             port_mappings=[
                 ecs.PortMapping(
                     container_port=8501,
@@ -132,13 +128,33 @@ class CdkStack(Stack):
         bedrock_policy = iam.Policy(self, f"{prefix}BedrockPolicy",
                                     statements=[
                                         iam.PolicyStatement(
-                                            actions=["bedrock:InvokeModel"],
+                                            actions=["bedrock:InvokeAgent", "bedrock:InvokeModel"],
                                             resources=["*"]
+                                        ),
+                                        iam.PolicyStatement(
+                                            actions=[
+                                                "bedrock:Retrieve",
+                                                "bedrock:RetrieveAndGenerate"
+                                            ],
+                                            resources=["*"]
+                                        )
+                                    ]
+                                    )
+        # Grant access to S3 (for retrieving images).
+        s3_policy = iam.Policy(self, f"{prefix}S3Policy",
+                                    statements=[
+                                        iam.PolicyStatement(
+                                            actions=["s3:GetObject", "s3:GetBucketLocation"],
+                                            resources=[
+                                                f"arn:aws:s3:::{Config.S3_BUCKET_HR_ASSISTANCE_GENERATED_IMAGES}",
+                                                f"arn:aws:s3:::{Config.S3_BUCKET_HR_ASSISTANCE_GENERATED_IMAGES}/*",
+                                            ]
                                         )
                                     ]
                                     )
         task_role = fargate_task_definition.task_role
         task_role.attach_inline_policy(bedrock_policy)
+        task_role.attach_inline_policy(s3_policy)
 
         # Grant access to read the secret in Secrets Manager
         secret.grant_read(task_role)
@@ -195,7 +211,6 @@ class CdkStack(Stack):
 
         # Output CloudFront URL
         CfnOutput(self, "CloudFrontDistributionURL",
-                  value=cloudfront_distribution.domain_name)
+                  value=f"https://{cloudfront_distribution.domain_name}")
         # Output Cognito pool id
-        CfnOutput(self, "CognitoPoolId",
-                  value=user_pool.user_pool_id)
+        CfnOutput(self, "CognitoPoolId", value=user_pool.user_pool_id)
